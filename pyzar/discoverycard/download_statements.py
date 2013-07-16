@@ -4,11 +4,10 @@ import datetime
 import getpass
 import logging
 import os
-import urllib
-import urllib2
 import zipfile
 import StringIO
 import html5lib
+import requests
 from pyzar import config as pyzar_config
 import fnmatch
 
@@ -16,11 +15,11 @@ XHTML = "http://www.w3.org/1999/xhtml"
 NS = {"html": XHTML}
 DOMAIN = "https://www.discoveryonlinebanking.co.za"
 
+session = requests.Session()
+
 def parse_response(response):
     """parses the given http response or response contents and returns an lxml-constructed etree"""
-    if hasattr(response, "read"):
-        response = response.read()
-    return html5lib.parse(response, treebuilder="lxml")
+    return html5lib.parse(response.text, treebuilder="lxml")
 
 def get_form_value(response, form_name, key_name):
     controller_tree = parse_response(response)
@@ -45,7 +44,7 @@ def repost_form(response, form_name, override_values=None):
     else:
         form_input = controller_tree.xpath('.//html:input[@name="%s"]' % form_name, namespaces=NS)[0]
         target_url = form_input.attrib['onclick'].replace("parent.result.location=", "").strip("'")
-    target_page = opener.open("%s%s" % (DOMAIN, target_url), urllib.urlencode(target_dict))
+    target_page = session.post("%s%s" % (DOMAIN, target_url), data=target_dict)
     return target_page
 
 def main():
@@ -53,23 +52,20 @@ def main():
 
     logging.getLogger().setLevel(logging.INFO)
 
-    opener = urllib2.build_opener(urllib2.HTTPCookieProcessor())
-
-    initial_page = opener.open(DOMAIN)
+    initial_page = session.get(DOMAIN)
 
     USERNAME = raw_input("enter username: ")
     PASSWORD = getpass.getpass("enter password: ")
 
     # omitted: backButtonBlocker, BrowserType, BrowserVersion, OperatingSystem
-    signon_dict = {"LoginButton": "Login", "action": "login", "Username": USERNAME, "Password": PASSWORD, "formname": "LOGIN_FORM", "url": 2}
-    signon_data = urllib.urlencode(signon_dict)
-    signon_response = opener.open("%s/login/Controller" % DOMAIN, signon_data)
+    signon_data = {"LoginButton": "Login", "action": "login", "Username": USERNAME, "Password": PASSWORD, "formname": "LOGIN_FORM", "url": 2}
+    signon_response = session.post("%s/login/Controller" % DOMAIN, data=signon_data)
     controller_response = repost_form(signon_response, "result_login")
-    home_response = repost_form(controller_response, "homePageForm")
-    accounts_response = opener.open("%s/Controller?%s" % (DOMAIN, urllib.urlencode({"action": "load_accounts"})))
-    accounts_response = repost_form(accounts_response, "redirectForm").read()
-    accounts_response = repost_form(accounts_response, "bodyform").read()
-    accounts_tree = html5lib.parse(accounts_response, treebuilder="lxml")
+    home_response = repost_form(controller_response, "HomePageForm")
+    accounts_response = session.get("%s/Controller" % DOMAIN, params={"action": "load_accounts"})
+    accounts_response = repost_form(accounts_response, "redirectForm")
+    accounts_response = repost_form(accounts_response, "bodyform")
+    accounts_tree = html5lib.parse(accounts_response.text, treebuilder="lxml")
     accounts_form = accounts_tree.xpath('.//html:form[@name="ACCOUNTS_TAB_FORM"]', namespaces=NS)
     date = datetime.date.today().strftime("%Y%m%d")
     if accounts_form:
@@ -92,9 +88,9 @@ def main():
                     break
             if account_name and history_url:
                 logging.info("Selecting account %s", account_name)
-                history_page = opener.open("%s%s" % (DOMAIN, history_url)).read()
+                history_page = session.get("%s%s" % (DOMAIN, history_url))
                 key = get_form_value(history_page, "bodyform", "key")
-                history_page = repost_form(history_page, "bodyform").read()
+                history_page = repost_form(history_page, "bodyform")
                 # TODO: this isn't getting the right download for some reason
                 data = {"ANRFN": get_form_value(history_page, "FORMDDAHISTSELCRIT_108", "ANRFN"),
                         "action": "downloadTransactionHistory",
@@ -103,8 +99,8 @@ def main():
                         "function": "",
                         "key": key,
                        }
-                download_response = opener.open("%s/Controller?%s" % (DOMAIN, urllib.urlencode(data))).read()
-                zf = zipfile.ZipFile(StringIO.StringIO(download_response))
+                download_response = session.get("%s/Controller" % DOMAIN, params=data, stream=True)
+                zf = zipfile.ZipFile(download_response.raw)
                 for actual_file_name in fnmatch.filter(zf.namelist(), "%s.ofx" % account_name):
                     ofx_contents = zf.read(actual_file_name)
                     actual_account_name = actual_file_name.replace(".ofx", "")
