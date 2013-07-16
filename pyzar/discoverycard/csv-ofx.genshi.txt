@@ -1,0 +1,58 @@
+OFXHEADER:100
+DATA:OFXSGML
+VERSION:102
+SECURITY:NONE
+ENCODING:USASCII
+CHARSET:1252
+COMPRESSION:NONE
+OLDFILEUID:NONE
+NEWFILEUID:NONE
+
+<OFX>
+<SIGNONMSGSRSV1>
+<SONRS>
+<STATUS>
+<CODE>0
+<SEVERITY>INFO
+</STATUS>
+<DTSERVER>${date_served.strftime('%Y%m%d%H%M%S')}
+<LANGUAGE>ENG
+<INTU.BID>3000
+</SONRS>
+</SIGNONMSGSRSV1>
+<BANKMSGSRSV1>
+<STMTTRNRS>
+<TRNUID>0
+<STATUS>
+<CODE>0
+<SEVERITY>INFO
+</STATUS>
+<STMTRS>
+<CURDEF>${currency}
+<BANKACCTFROM>
+<BANKID>${"%08d" % bank_id}
+<ACCTID>${bank_account}
+<ACCTTYPE>CHECKING
+</BANKACCTFROM>
+<BANKTRANLIST>
+<DTSTART>${date_start.strftime('%Y%m%d')}
+<DTEND>${date_end.strftime('%Y%m%d')}
+{% for tx in transactions %}\
+<STMTTRN>
+<TRNTYPE>${tx.type}
+<DTPOSTED>${tx.date.strftime('%Y%m%d')}
+<TRNAMT>${'%0.2f' % tx.amount}
+<FITID>${tx.id}
+{% if tx.name %}<NAME>${tx.name}{% end %}
+<MEMO>${tx.memo}
+</STMTTRN>
+{% end %}\
+</BANKTRANLIST>
+{% if balance_amount %}<LEDGERBAL>
+<BALAMT>${'%0.2f' % balance_amount}
+<DTASOF>${balance_date.strftime('%Y%m%d')}
+</LEDGERBAL>{% end %}
+</STMTRS>
+</STMTTRNRS>
+</BANKMSGSRSV1>
+</OFX>
