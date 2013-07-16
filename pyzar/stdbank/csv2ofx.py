@@ -170,7 +170,7 @@ def cleanup_csv(csv_contents):
         csv_contents = re.sub("(MAESTRO[^,]*CASH: R *[0-9]+,[0-9]+)", r'"\1"', csv_contents)
     return csv_contents
 
-if __name__ == "__main__":
+def main():
     import sys
     csv_filename = sys.argv[1]
     if len(sys.argv) > 2:
@@ -178,4 +178,7 @@ if __name__ == "__main__":
     else:
         ofx_filename = csv_filename.replace(".csv", ".ofx")
     csv2ofx(csv_filename, ofx_filename)
+
+if __name__ == "__main__":
+    main()
 
