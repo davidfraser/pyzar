@@ -115,7 +115,7 @@ def txt2ofx(txt_file):
         ofx_file.balance_date = datetime.datetime.strptime(last_trans["date"], "%d%b %H:%M")
     return ofx_file
 
-if __name__ == "__main__":
+def main():
     import sys
     txt_filename = sys.argv[1]
     if len(sys.argv) > 2:
@@ -126,4 +126,7 @@ if __name__ == "__main__":
     ofx_file = txt2ofx(txt_file)
     ofx_contents = ofx_file.generate().render()
     open(ofx_filename, "w").write(ofx_contents)
+
+if __name__ == "__main__":
+    main()
 

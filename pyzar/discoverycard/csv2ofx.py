@@ -112,7 +112,7 @@ def csv2ofx(csv_file):
         ofx_file.balance_date = parse_csv_date(last_trans, ofx_file.date_served)
     return ofx_file
 
-if __name__ == "__main__":
+def main():
     import sys
     csv_filename = sys.argv[1]
     if len(sys.argv) > 2:
@@ -125,4 +125,7 @@ if __name__ == "__main__":
     ofx_file = csv2ofx(csv_file)
     ofx_contents = ofx_file.generate().render()
     open(ofx_filename, "w").write(ofx_contents)
+
+if __name__ == "__main__":
+    main()
 
