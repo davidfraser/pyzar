@@ -37,14 +37,16 @@ def repost_form(response, form_name, override_values=None):
         controller_form = controller_forms[0]
         target_url = controller_form.attrib['action']
         for form_input in controller_form.xpath('.//html:input', namespaces=NS):
-            if form_input.attrib['type'] == 'hidden' and 'value' in form_input.attrib:
+            if form_input.attrib.get('type', None) == 'hidden' and 'value' in form_input.attrib:
                target_dict[form_input.attrib['name']] = form_input.attrib['value']
         if override_values:
             target_dict.update(override_values)
     else:
         form_input = controller_tree.xpath('.//html:input[@name="%s"]' % form_name, namespaces=NS)[0]
         target_url = form_input.attrib['onclick'].replace("parent.result.location=", "").strip("'")
-    target_page = session.post("%s%s" % (DOMAIN, target_url), data=target_dict)
+    if "://" not in target_url:
+        target_url = "%s%s" % (DOMAIN, target_url)
+    target_page = session.post(target_url, data=target_dict)
     return target_page
 
 def main():
@@ -58,11 +60,14 @@ def main():
     PASSWORD = getpass.getpass("enter password: ")
 
     # omitted: backButtonBlocker, BrowserType, BrowserVersion, OperatingSystem
-    signon_data = {"LoginButton": "Login", "action": "login", "Username": USERNAME, "Password": PASSWORD, "formname": "LOGIN_FORM", "url": 2}
-    signon_response = session.post("%s/login/Controller" % DOMAIN, data=signon_data)
+    start_page = session.post("%s/banking/Controller" % DOMAIN, params={"action": "dologin", "countryCode": "ZA", "country": "15", "skin": "2", "targetDiv": "workspace"})
+    login_page = repost_form(start_page, "bodyform")
+    signon_data = {"Username": USERNAME, "Password": PASSWORD}
+    signon_response = repost_form(login_page, "login_banking_form", signon_data)
     controller_response = repost_form(signon_response, "result_login")
     home_response = repost_form(controller_response, "HomePageForm")
-    accounts_response = session.get("%s/Controller" % DOMAIN, params={"action": "load_accounts"})
+    # TODO: this currently says "you have been logged out..." - how lovely!
+    accounts_response = session.post("%s/banking/Controller" % DOMAIN, params={"nav": "accounts.summaryofaccountbalances.navigator.SummaryOfAccountBalances", "FARFN": "4", "actionchild": "1", "isTopMenu": "true", "targetDiv": "workspace"})
     accounts_response = repost_form(accounts_response, "redirectForm")
     accounts_response = repost_form(accounts_response, "bodyform")
     accounts_tree = html5lib.parse(accounts_response.text, treebuilder="lxml")
