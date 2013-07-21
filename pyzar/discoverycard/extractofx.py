@@ -18,7 +18,8 @@ def main():
             if date_end > latest_date.get(account, None):
                 latest_date[account] = date_end
 
-    ACCOUNT_TYPE = pyzar_config.get_config().get('discoverycard', 'account_type', 'silver')
+    config = pyzar_config.get_config()
+    ACCOUNT_TYPE = config.get('discoverycard', 'account_type') if config.has_option('discoverycard', 'account_type') else 'silver'
     FILENAME = "transaction_history_Discovery_%s_Account.zip" % (ACCOUNT_TYPE.title())
     zf = zipfile.ZipFile(FILENAME)
     errors = 0
