@@ -14,6 +14,7 @@ import fnmatch
 XHTML = "http://www.w3.org/1999/xhtml"
 NS = {"html": XHTML}
 DOMAIN = "https://www.discoveryonlinebanking.co.za"
+BROWSER_DATA = {"BrowserType": "Chrome", "BrowserVersion": "28.0.1500.52 Safari/537.36", "OperatingSystem": "Linux i686"}
 
 session = requests.Session()
 
@@ -32,6 +33,7 @@ def repost_form(response, form_name, override_values=None):
     """Discovery Online Banking keeps on redirecting through a controller, reading parameters from a form, and then reposts them to get the desired page"""
     controller_tree = parse_response(response)
     target_dict = {}
+    target_dict.update(BROWSER_DATA)
     controller_forms = controller_tree.xpath('.//html:form[@name="%s"]' % form_name, namespaces=NS)
     if controller_forms:
         controller_form = controller_forms[0]
@@ -65,11 +67,8 @@ def main():
     signon_data = {"Username": USERNAME, "Password": PASSWORD}
     signon_response = repost_form(login_page, "login_banking_form", signon_data)
     controller_response = repost_form(signon_response, "result_login")
-    home_response = repost_form(controller_response, "HomePageForm")
-    # TODO: this currently says "you have been logged out..." - how lovely!
+    home_response = repost_form(controller_response, "LoggedInForm")
     accounts_response = session.post("%s/banking/Controller" % DOMAIN, params={"nav": "accounts.summaryofaccountbalances.navigator.SummaryOfAccountBalances", "FARFN": "4", "actionchild": "1", "isTopMenu": "true", "targetDiv": "workspace"})
-    accounts_response = repost_form(accounts_response, "redirectForm")
-    accounts_response = repost_form(accounts_response, "bodyform")
     accounts_tree = html5lib.parse(accounts_response.text, treebuilder="lxml")
     accounts_form = accounts_tree.xpath('.//html:form[@name="ACCOUNTS_TAB_FORM"]', namespaces=NS)
     date = datetime.date.today().strftime("%Y%m%d")
