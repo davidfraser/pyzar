@@ -66,6 +66,10 @@ def main():
                     continue
             ofx_file = opener.open("%s/ibsa/accounts/statements/download.do?format=OFX" % DOMAIN)
             ofx_contents = ofx_file.read()
+            ofx_file.close()
+            if "Internet Banking is currently unavailable" in ofx_contents:
+                logging.warning("Error retrieving OFX file %s: Internet banking unavailable", ofx_filename)
+                continue
             logging.info("Saving to %s", ofx_filename)
             with open(ofx_filename, "w") as ofx_file:
                 ofx_file.write(ofx_contents)

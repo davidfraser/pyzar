@@ -62,6 +62,7 @@ def main():
     PASSWORD = getpass.getpass("enter password: ")
 
     # omitted: backButtonBlocker, BrowserType, BrowserVersion, OperatingSystem
+    import pdb ; pdb.set_trace()
     start_page = session.post("%s/banking/Controller" % DOMAIN, params={"action": "dologin", "countryCode": "ZA", "country": "15", "skin": "2", "targetDiv": "workspace"})
     login_page = repost_form(start_page, "bodyform")
     signon_data = {"Username": USERNAME, "Password": PASSWORD}
