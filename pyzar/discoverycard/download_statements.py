@@ -10,6 +10,8 @@ import html5lib
 import requests
 from pyzar import config as pyzar_config
 import fnmatch
+# useful for debugging
+from xml.etree.ElementTree import tostring as ts
 
 XHTML = "http://www.w3.org/1999/xhtml"
 NS = {"html": XHTML}
@@ -62,7 +64,6 @@ def main():
     PASSWORD = getpass.getpass("enter password: ")
 
     # omitted: backButtonBlocker, BrowserType, BrowserVersion, OperatingSystem
-    import pdb ; pdb.set_trace()
     start_page = session.post("%s/banking/Controller" % DOMAIN, params={"action": "dologin", "countryCode": "ZA", "country": "15", "skin": "2", "targetDiv": "workspace"})
     login_page = repost_form(start_page, "bodyform")
     signon_data = {"Username": USERNAME, "Password": PASSWORD}
@@ -70,42 +71,51 @@ def main():
     controller_response = repost_form(signon_response, "result_login")
     home_response = repost_form(controller_response, "LoggedInForm")
     accounts_response = session.post("%s/banking/Controller" % DOMAIN, params={"nav": "accounts.summaryofaccountbalances.navigator.SummaryOfAccountBalances", "FARFN": "4", "actionchild": "1", "isTopMenu": "true", "targetDiv": "workspace"})
+
     accounts_tree = html5lib.parse(accounts_response.text, treebuilder="lxml")
-    accounts_form = accounts_tree.xpath('.//html:form[@name="ACCOUNTS_TAB_FORM"]', namespaces=NS)
+    # This has not been tested with multiple accounts
+    accounts_form = accounts_tree.findall('.//{%(html)s}div[@data-value="tableHeaderRow_0"]' % NS)
     date = datetime.date.today().strftime("%Y%m%d")
     if accounts_form:
-        for account_row in accounts_form[0].xpath('.//html:table//html:tr', namespaces=NS)[1:]:
-            history_url, account_name = None, None
-            for link in account_row.xpath('.//html:a', namespaces=NS):
-                link_target = link.attrib.get('href', '')
-                if "acc_trans_hist" in link_target:
-                    history_url = link_target
-                    if link.text.strip().startswith("Discovery"):
-                        account_description = link.text.strip()
-                        break
-            account_number_tds = account_row.xpath('.//html:td', namespaces=NS)
-            for account_number_td in account_number_tds:
-                for account_number_child in account_number_td.iterchildren():
-                     if account_number_child.text and account_number_child.text.strip() == "account number":
-                         account_name = account_number_child.tail.strip()
-                         break
-                if account_name:
-                    break
-            if account_name and history_url:
+        for account_row in accounts_form:
+            account_name_parent = account_row.find('.//{%(html)s}div[@name="doubleItem_bottom_div_accountNumber"]' % NS)
+            account_link = account_row.find('.//{%(html)s}div[@name="doubleItem_top_div_nickname0"]//{%(html)s}a' % NS)
+            if account_link is None:
+                continue
+            link_js = account_link.attrib['onclick']
+            account_view_url = link_js[link_js.find('/banking/Controller'):]
+            account_view_url = account_view_url[:account_view_url.find("'")]
+            account_name = account_name_parent.text.strip()
+            if account_name and account_view_url:
                 logging.info("Selecting account %s", account_name)
+                account_view_page = session.get("%s%s" % (DOMAIN, account_view_url))
+                account_view_tree = html5lib.parse(account_view_page.text, treebuilder="lxml")
+                sub_tabs = account_view_tree.findall('.//{%(html)s}div[@class="subTabText"]' % NS)
+                action_menu_button = account_view_tree.find('.//{%(html)s}div[@id="actionMenuButton0"]' % NS)
+                if action_menu_button is not None:
+                    real_account_name_js = action_menu_button.attrib["onclick"]
+                    real_account_name = real_account_name_js[real_account_name_js.find("accountNumber=")+len("accountNumber="):]
+                    real_account_name = real_account_name[:real_account_name.find("&")]
+                    account_name = real_account_name
+                    logging.info("Account name is actually %s", account_name)
+                history_subtab = [sub_tab.getparent() for sub_tab in sub_tabs if sub_tab.text.strip() == "Transaction History"]
+                if not history_subtab:
+                    logging.warning("Could not locate transaction history subtab")
+                    continue
+                history_url = history_subtab[0].attrib["data-value"]
                 history_page = session.get("%s%s" % (DOMAIN, history_url))
-                key = get_form_value(history_page, "bodyform", "key")
-                history_page = repost_form(history_page, "bodyform")
-                # TODO: this isn't getting the right download for some reason
-                data = {"ANRFN": get_form_value(history_page, "FORMDDAHISTSELCRIT_108", "ANRFN"),
-                        "action": "downloadTransactionHistory",
+                history_tree = html5lib.parse(history_page.text, treebuilder="lxml")
+                download_label = history_tree.find('.//{%(html)s}div[@class="tableActionButton downloadButton"]' % NS)
+                download_js = download_label.attrib["onclick"]
+                download_url = download_js[download_js.find("url:'")+len("url:'"):]
+                download_url = download_url[:download_url.find("'")]
+                download_page = session.get("%s%s" % (DOMAIN, download_url))
+                data = {"nav": "accounts.transactionhistory.navigator.TransactionHistoryDDADownload",
+                        "doDownload": "true",
                         "downloadFormat": "ofx",
-                        "formname": "FORMDDAHISTSELCRIT_108",
-                        "function": "",
-                        "key": key,
                        }
-                download_response = session.get("%s/Controller" % DOMAIN, params=data, stream=True)
-                zf = zipfile.ZipFile(download_response.raw)
+                download_response = session.get("%s/banking/Controller" % DOMAIN, params=data, stream=True)
+                zf = zipfile.ZipFile(StringIO.StringIO(download_response.raw.data))
                 for actual_file_name in fnmatch.filter(zf.namelist(), "%s.ofx" % account_name):
                     ofx_contents = zf.read(actual_file_name)
                     actual_account_name = actual_file_name.replace(".ofx", "")
@@ -118,7 +128,10 @@ def main():
                             continue
                     logging.info("Saving to %s", ofx_filename)
                     open(ofx_filename, "w").write(ofx_contents)
-    # TODO: logout
+    logoff_page = session.get("%s/banking/Controller" % DOMAIN, params={"nav": "navigator.UserLogoff", "isTopMenu": "true", "targetDiv": "workspace"})
+    logoff_success = "You have been successfully logged out" in logoff_page.text
+    if logoff_success:
+        logging.info("Logout complete")
 
 if __name__ == '__main__':
     main()
