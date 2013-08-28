@@ -92,12 +92,14 @@ def main():
                 account_view_tree = html5lib.parse(account_view_page.text, treebuilder="lxml")
                 sub_tabs = account_view_tree.findall('.//{%(html)s}div[@class="subTabText"]' % NS)
                 action_menu_button = account_view_tree.find('.//{%(html)s}div[@id="actionMenuButton0"]' % NS)
+                real_account_name = account_name
+                # We can only retrieve the real account name if we have appropriate rights
                 if action_menu_button is not None:
                     real_account_name_js = action_menu_button.attrib["onclick"]
                     real_account_name = real_account_name_js[real_account_name_js.find("accountNumber=")+len("accountNumber="):]
-                    real_account_name = real_account_name[:real_account_name.find("&")]
-                    account_name = real_account_name
-                    logging.info("Account name is actually %s", account_name)
+                    real_account_name = real_account_name[:real_account_name.find("&")].strip()
+                    if real_account_name != account_name and len(real_account_name) == len(account_name):
+                        logging.info("Account name is actually %s", real_account_name)
                 history_subtab = [sub_tab.getparent() for sub_tab in sub_tabs if sub_tab.text.strip() == "Transaction History"]
                 if not history_subtab:
                     logging.warning("Could not locate transaction history subtab")
@@ -105,9 +107,13 @@ def main():
                 history_url = history_subtab[0].attrib["data-value"]
                 history_page = session.get("%s%s" % (DOMAIN, history_url))
                 history_tree = html5lib.parse(history_page.text, treebuilder="lxml")
+                # fetching the extra page causes this to retrieve fuller history
+                extended_history_params = {"targetDiv": "workspace", "nav": "accounts.transactionhistory.navigator.TransactionHistoryTCSFuller", "transactionHistoryTables_searchField": "", "transactionHistoryTables_limitSelectionDropdown": "140"}
+                history_page_2 = session.get("%s/banking/Controller" % DOMAIN, params=extended_history_params)
                 download_label = history_tree.find('.//{%(html)s}div[@class="tableActionButton downloadButton"]' % NS)
                 download_js = download_label.attrib["onclick"]
-                download_url = download_js[download_js.find("url:'")+len("url:'"):]
+                download_url = download_js[download_js.find("url:")+len("url:"):].lstrip()
+                download_url = download_url[download_url.find("'")+1:]
                 download_url = download_url[:download_url.find("'")]
                 download_page = session.get("%s%s" % (DOMAIN, download_url))
                 data = {"nav": "accounts.transactionhistory.navigator.TransactionHistoryDDADownload",
@@ -116,9 +122,12 @@ def main():
                        }
                 download_response = session.get("%s/banking/Controller" % DOMAIN, params=data, stream=True)
                 zf = zipfile.ZipFile(StringIO.StringIO(download_response.raw.data))
-                for actual_file_name in fnmatch.filter(zf.namelist(), "%s.ofx" % account_name):
+                file_pattern = "%s.ofx" % account_name.replace("_", "?").replace("*", "?")
+                for actual_file_name in fnmatch.filter(zf.namelist(), file_pattern):
                     ofx_contents = zf.read(actual_file_name)
                     actual_account_name = actual_file_name.replace(".ofx", "")
+                    if "_" in actual_account_name and fnmatch.fnmatch("%s.ofx" % real_account_name, file_pattern):
+                        actual_account_name = real_account_name
                     ofx_filename = os.path.join(TARGET_PATH, "%s-%s.ofx" % (actual_account_name, date))
                     if os.path.exists(ofx_filename):
                         overwrite = "x"
