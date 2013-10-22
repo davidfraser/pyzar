@@ -28,9 +28,9 @@ if __name__ == '__main__':
         install_requires=['html5lib', 'requests', 'genshi', 'lxml', 'mailbot'],
         entry_points = {
             'console_scripts': [
-                'stdbank_download_statements = pyzar.stdbank.download_statements:main',
+                'pyzar_download_stdbank_statements = pyzar.stdbank.download_statements:main',
                 'stdbank_csv2ofx = pyzar.stdbank.csv2ofx:main',
-                'discoverycard_download_statements = pyzar.discoverycard.download_statements:main',
+                'pyzar_download_discoverycard_statements = pyzar.discoverycard.download_statements:main',
                 'discoverycard_csv2ofx = pyzar.discoverycard.csv2ofx:main',
                 'discoverycard_extractofx = pyzar.discoverycard.extractofx:main',
                 'pyzar_download_email_statements = pyzar.email.download_statements:main',
